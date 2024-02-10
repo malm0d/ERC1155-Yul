@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.19;
+pragma solidity 0.8.20;
 
 import "forge-std/Test.sol";
 
@@ -10,7 +10,8 @@ contract YulDeployer is Test {
     ///@return deployedAddress - The address that the contract was deployed to
     function deployContract(string memory fileName) public returns (address) {
         string memory bashCommand = string.concat(
-            'cast abi-encode "f(bytes)" $(solc --strict-assembly yul/', string.concat(fileName, ".yul --bin | tail -1)")
+            'cast abi-encode "f(bytes)" $(solc --evm-version=paris --strict-assembly yul/',
+            string.concat(fileName, ".yul --bin | tail -1)")
         );
 
         string[] memory inputs = new string[](3);
@@ -19,6 +20,7 @@ contract YulDeployer is Test {
         inputs[2] = bashCommand;
 
         bytes memory bytecode = abi.decode(vm.ffi(inputs), (bytes));
+        console2.logBytes(bytecode);
 
         ///@notice deploy the bytecode with the create instruction
         address deployedAddress;
