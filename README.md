@@ -11,12 +11,8 @@ foundryup
 2. Install solidity compiler
 https://docs.soliditylang.org/en/latest/installing-solidity.html#installing-the-solidity-compiler
 
-#### NOTE: Please use Solidity `0.8.19`. This will not compile with Solidity `^0.8.20` due to `PUSH0` opcode.
-```
-solc-select install 0.8.19
-
-solc-select use 0.8.19
-```
+#### NOTE: 
+Added: `--evm-version=paris` to `YulDeployer.sol` to work around PUSH0 issue.
 
 3. Build Yul contracts and check tests pass
 ```
