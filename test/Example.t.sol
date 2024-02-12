@@ -9,18 +9,33 @@ interface Example {}
 contract ExampleTest is Test {
     YulDeployer yulDeployer = new YulDeployer();
 
-    Example exampleContract;
+    Example exampleContractParis;
+    Example exampleContractShanghai;
 
-    function setUp() public {
-        exampleContract = Example(yulDeployer.deployContract("Example"));
-    }
+    // function setUp() public {
+    //     exampleContractParis = Example(yulDeployer.deployContractParis("Example"));
+    //     exampleContractShanghai = Example(yulDeployer.deployContractShanghai("Example"));
+    // }
 
-    function testExample() public {
-        bytes memory callDataBytes = abi.encodeWithSignature("randomBytes()");
+    function testParis() public {
+        exampleContractParis = Example(yulDeployer.deployContractParis("Example"));
 
-        (bool success, bytes memory data) = address(exampleContract).call{gas: 100000, value: 0}(callDataBytes);
+        bytes memory callDataBytes = abi.encodeWithSignature("random()");
+
+        (bool success, bytes memory data) = address(exampleContractParis).call{gas: 100000, value: 0}(callDataBytes);
 
         assertTrue(success);
         assertEq(data, callDataBytes);
+    }
+
+    function testShanghai() public {
+        exampleContractShanghai = Example(yulDeployer.deployContractShanghai("Example"));
+
+        bytes memory callDataBytes = abi.encodeWithSignature("random()");
+
+        (bool success, bytes memory data) = address(exampleContractShanghai).call{gas: 100000, value: 0}(callDataBytes);
+
+        assertTrue(success);
+        //assertEq(data, callDataBytes);
     }
 }

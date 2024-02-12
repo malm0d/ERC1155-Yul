@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.20;
+pragma solidity 0.8.21;
 
 import "forge-std/Test.sol";
 
@@ -20,13 +20,72 @@ contract YulDeployer is Test {
         inputs[2] = bashCommand;
 
         bytes memory bytecode = abi.decode(vm.ffi(inputs), (bytes));
-        console2.logBytes(bytecode);
 
         ///@notice deploy the bytecode with the create instruction
         address deployedAddress;
         assembly {
             deployedAddress := create(0, add(bytecode, 0x20), mload(bytecode))
         }
+
+        ///@notice check that the deployment was successful
+        require(deployedAddress != address(0), "YulDeployer could not deploy contract");
+
+        ///@notice return the address that the contract was deployed to
+        return deployedAddress;
+    }
+
+    function deployContractParis(string memory fileName) public returns (address) {
+        string memory bashCommand = string.concat(
+            'cast abi-encode "f(bytes)" $(solc --evm-version=paris --strict-assembly yul/',
+            string.concat(fileName, ".yul --bin | tail -1)")
+        );
+
+        string[] memory inputs = new string[](3);
+        inputs[0] = "bash";
+        inputs[1] = "-c";
+        inputs[2] = bashCommand;
+
+        console2.logString("Creation:");
+        bytes memory bytecode = abi.decode(vm.ffi(inputs), (bytes));
+        console2.logBytes(bytecode);
+
+        ///@notice deploy the bytecode with the create instruction
+        console2.log("Deployed:");
+        address deployedAddress;
+        assembly {
+            deployedAddress := create(0, add(bytecode, 0x20), mload(bytecode))
+        }
+        console2.logAddress(deployedAddress);
+
+        ///@notice check that the deployment was successful
+        require(deployedAddress != address(0), "YulDeployer could not deploy contract");
+
+        ///@notice return the address that the contract was deployed to
+        return deployedAddress;
+    }
+
+    function deployContractShanghai(string memory fileName) public returns (address) {
+        string memory bashCommand = string.concat(
+            'cast abi-encode "f(bytes)" $(solc --evm-version=shanghai --strict-assembly yul/',
+            string.concat(fileName, ".yul --bin | tail -1)")
+        );
+
+        string[] memory inputs = new string[](3);
+        inputs[0] = "bash";
+        inputs[1] = "-c";
+        inputs[2] = bashCommand;
+
+        console2.logString("Creation:");
+        bytes memory bytecode = abi.decode(vm.ffi(inputs), (bytes));
+        console2.logBytes(bytecode);
+
+        ///@notice deploy the bytecode with the create instruction
+        console2.log("Deployed:");
+        address deployedAddress;
+        assembly {
+            deployedAddress := create(0, add(bytecode, 0x20), mload(bytecode))
+        }
+        console2.logAddress(deployedAddress);
 
         ///@notice check that the deployment was successful
         require(deployedAddress != address(0), "YulDeployer could not deploy contract");
