@@ -35,6 +35,7 @@ interface IERC1155 {
     function isApprovedForAll(address owner, address operator) external view returns (bool);
 
     //--------------------------------Additional--------------------------------
+    function setURI(string calldata newuri) external;
     function mint(address to, uint256 id, uint256 amount, bytes calldata data) external;
     function batchMint(address to, uint256[] calldata ids, uint256[] calldata amounts, bytes calldata data) external;
     function burn(address from, uint256 id, uint256 amount) external;
