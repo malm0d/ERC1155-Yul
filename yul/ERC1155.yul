@@ -20,11 +20,15 @@ object "ERC1155" {
             /*----------------------------    External functions    ----------------------------*/
             /*----------------------------------------------------------------------------------*/
             
-            //seTURI(string)
+            //setURI(string)
             case 0x02fe5305 {}
 
             //setApprovalForAll(address,bool)
-            case 0xa22cb465 {}
+            case 0xa22cb465 {
+                let operator := decodeAsAddress(0)
+                let approved := decodeAsUint(1)
+                _setApprovalForAll(caller(), operator, approved)
+            }
 
             //safeTransferFrom(address,address,uint256,uint256,bytes)
             case 0xf242432a {}
@@ -48,16 +52,16 @@ object "ERC1155" {
             /*----------------------------    View functions    ----------------------------*/
             /*------------------------------------------------------------------------------*/
 
-            //uri(uint256)
+            //uri(uint256) -> string
             case 0x0e89341c {}
 
-            //balanceOfBatch(address[],uint256[])
+            //balanceOfBatch(address[],uint256[]) -> uint256[]
             case 0x4e1273f4 {}
 
-            //supportsInterface(bytes4)
+            //supportsInterface(bytes4) -> bool
             case 0x01ffc9a7 {}
 
-            //balanceOf(address,uint256)
+            //balanceOf(address,uint256) -> uint256
             case 0x00fdd58e {
                 let addr := decodeAsAddress(0)
                 let tokenId := decodeAsUint(1)
@@ -65,8 +69,13 @@ object "ERC1155" {
                 returnUint(bal)
             }
 
-            //isApprovedForAll(address,address)
-            case 0xe985e9c5 {}
+            //isApprovedForAll(address,address) -> bool
+            case 0xe985e9c5 {
+                let owner := decodeAsAddress(0)
+                let operator := decodeAsAddress(1)
+                let all := _getIsApprovedForAll(owner, operator)
+                returnUint(all)
+            }
 
             //technically we do not need a fallback, but here we just do nothing
             default {
@@ -151,8 +160,8 @@ object "ERC1155" {
                 bal := sload(innerLoc)
             }
 
-            function _safeAddBalanceOf(toAddr, amount, tokenId) {
-                //Get location of toAddr's balance in storage
+            function _safeAddBalanceOf(toAddr, tokenId, amount) {
+                //Get location of toAddr's balance of tokenId in storage
                 mstore(0x00, toAddr)
                 mstore(0x20, balanceOfSlot())
                 let outerLoc := keccak256(0x00, 0x40)
@@ -165,8 +174,8 @@ object "ERC1155" {
                 sstore(innerLoc, safeAdd(currBal, amount))
             }
 
-            function _safeSubBalanceOf(fromAddr, amount, tokenId) {
-                //Get location of fromAddr's balance in storage
+            function _safeSubBalanceOf(fromAddr, tokenId, amount) {
+                //Get location of fromAddr's balance of tokenId in storage
                 mstore(0x00, fromAddr)
                 mstore(0x20, balanceOfSlot())
                 let outerLoc := keccak256(0x00, 0x40)
@@ -195,9 +204,19 @@ object "ERC1155" {
                 all := sload(innerLoc)
             }
 
-            function _setApprovalForAll(oeprator, approved) { 
+            function _setApprovalForAll(owner, operator, approved) { 
+                //Get location of owner's approval for operator in storage
+                mstore(0x00, owner)
+                mstore(0x20, isApprovedForAllSlot())
+                let outerLoc := keccak256(0x00, 0x40)
+                mstore(0x00, operator)
+                mstore(0x20, outerLoc)
+                let innerLoc := keccak256(0x00, 0x40)
 
-                emitApprovalForAll()
+                //Update approval in storage
+                sstore(innerLoc, approved)
+
+                emitApprovalForAll(owner, operator, approved)
             }
 
             /*------------------------------------------------------------------------------*/
@@ -216,21 +235,81 @@ object "ERC1155" {
                 mstore(0x20, sload(uriSlot()))                                  //length
                 mstore(0x40, sload(dataoffset))                                 //uri value
 
-                //keccak256("URI(uint256)")
-                let signatureHash := 0x901e1c01b493ffa41590ea147378e25dde9601a9390b52eb75d4e0e2118a44a5
+                //keccak256("URI(string,uint256)")
+                let signatureHash := 0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b
 
                 //LOG1(offset, size, topic)
                 log1(0x00, 0x60, signatureHash)
             }
 
             //event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
-            function emitApprovalForAll {}
+            function emitApprovalForAll(owner, operator, approved) {
+                mstore(0x00, approved)
+
+                //keccak256("ApprovalForAll(address,address,bool)")
+                let signatureHash := 0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31
+
+                //LOG3(offset, size, topic1, topic2, topic3)
+                log3(0x00, 0x20, signatureHash, owner, operator)
+            }
 
             //event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value);
-            function emitTransferSingle {}
+            function emitTransferSingle(operator, from, to, id, value) {
+                mstore(0x00, id)
+                mstore(0x20, value)
 
+                //keccak256("TransferSingle(address,address,address,uint256,uint256)")
+                let signatureHash := 0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62
+
+                //LOG4(offset, size, topic1, topic2, topic3, topic4)
+                log4(0x00, 0x40, signatureHash, operator, from, to)
+            }
+
+            //function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] values, bytes data)
             //event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values);
-            function emitTransferBatch {}
+            function emitTransferBatch(
+                operator, 
+                from, 
+                to, 
+                idsLength,
+                idsLoc, 
+                valuesLength,
+                valuesLoc
+            ) {
+                //From the abi spec, the head parts of all arguments come first, so for dynamic types, this is the offset.
+                //To copy to memory:
+                //0x00: 0x20 = (offset for ids @ 0x40)
+                //0x20: 0x40 = (offset for values @ 0x60 + (no. of ids * 32 byte words)
+                //0x40: 0x60 = (ids length, eg: 0x02)
+                //0x60: 0x80 = ids[0]
+                //0x80: 0xa0 = ids[1]
+                //0xa0: 0xc0 = (values length)
+                //0xc0: <0xc0 + numValues*0x20> = [...values]
+
+                mstore(0x00, 0x40)                                              //offset for ids
+                mstore(0x20, add(0x60, mul(idsLength, 0x20)))                   //offset for values
+                let numOfWordsForIds := mul(add(idsLength, 0x01), 0x20)         //Words: id length word + (1 word per id)
+                
+                //calldatacopy(memOffsetCopyTo, calldataOffsetCopyFrom, numBytesToCopy)
+                calldatacopy(0x40, idsLoc, numOfWordsForIds)                    //Copy words for ids to memory
+
+                let numOfWordsForValues := mul(add(valuesLength, 0x01), 0x20)   //Words: values length word + (1 word per value
+                let valuesMemOffsetToCopyTo := add(0x40, numOfWordsForIds)
+
+                calldatacopy(                                                   //Copy words for values to memory    
+                    valuesMemOffsetToCopyTo, 
+                    valuesLoc, 
+                    numOfWordsForValues
+                )
+                
+                //keccak256("TransferBatch(address,address,address,uint256[],uint256[])")
+                let signatureHash := 0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb
+
+                let memSize := mul(0x20, add(add(idsLength, valuesLength), 4))   //4 = 2 offset words + 2 length words
+
+                //LOG4(offset, size, topic1, topic2, topic3, topic4)
+                log4(0x00, memSize, signatureHash, operator, from, to)
+            }
 
             /*---------------------------------------------------------------------------------*/
             /*----------------------------    Calldata encoding    ----------------------------*/
@@ -257,7 +336,7 @@ object "ERC1155" {
                 v := calldataload(pos)
             }
 
-            //Checks if address is valid (uint160), reverts if not
+            //Checks if address is valid (withibn uint160 max), reverts if not
             function decodeAsAddress(offset) -> v {
                 v := decodeAsUint(offset)
                 if iszero(iszero(and(v, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
@@ -307,7 +386,4 @@ object "ERC1155" {
             }
         }
     }
-
-
-
 }
