@@ -118,6 +118,9 @@ object "ERC1155" {
                     lenCoverage := add(lenCoverage, 0x20)       //Advance length coverage by 32 bytes
                 }
 
+                //I'm assuming that the id should be appended to the end of the uri string
+                //---do something---
+
                 return(0, add(0x40, lenConverage))              //(eg: offset(0x20) + length(0x20) + uri value(0x20))
             }
 
