@@ -150,6 +150,7 @@ object "ERC1155" {
                 return(0, add(0x40, lenCoverage))               //(eg: offset(0x20) + length(0x20) + uri value(0x20))
             }
 
+            //*Need clarification: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#bytes-and-string
             function _setUri() {
                 //calldata: selector, offset, length, value
                 let uriOffset := decodeAsUint(0)
