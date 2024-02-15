@@ -94,6 +94,32 @@ object "ERC1155" {
             function balanceOfSlot() -> slot { slot := 1 }
             function isApprovedForAllSlot() -> slot { slot := 2 }
 
+            //Nested mapping: (firstKey => (secondKey => value))
+            //Nested value storage location: keccak256(secondKey.concat(keccak256(firstKey.concat(mappingStorageSlot))))
+            function balanceOfStorageOffset(addr, tokenId) -> innerLoc {
+                //Outer location: keccak256(address.concat(balanceOfSlot()))
+                mstore(0x00, addr)
+                mstore(0x20, balanceOfSlot())
+                let outerLoc := keccak256(0x00, 0x40)
+
+                //Inner location: keccak256(tokenId.concat(outerLoc))
+                mstore(0x00, tokenId)
+                mstore(0x20, outerLoc)
+                let innerLoc := keccak256(0x00, 0x40)
+            }
+
+            function isApprovedForAllStorageOffset(owner, operator) -> innerLoc {
+                //Outer location: keccak256(owner.concat(isApprovedForAllSlot()))
+                mstore(0x00, owner)
+                mstore(0x20, isApprovedForAllSlot())
+                let outerLoc := keccak256(0x00, 0x40)
+
+                //Inner location: keccak256(operator.concat(outerLoc))
+                mstore(0x00, operator)
+                mstore(0x20, outerLoc)
+                let innerLoc := keccak256(0x00, 0x40)
+            }
+
             /*------------------------------------------------------------------------------*/
             /*----------------------------    Storage access    ----------------------------*/
             /*------------------------------------------------------------------------------*/
@@ -113,7 +139,7 @@ object "ERC1155" {
                 let wordChunk, lenCoverage                      //0, 0
                 for {} lt(lenCoverage, valueLen) {} {
                     wordChunk := sload(dataOffset)              //Load 32 bytes of uri value
-                    mstore(add(lenConverage, 0x40), wordChunk)  //Copy to memory, add 0x40 for offset + length
+                    mstore(add(lenCoverage, 0x40), wordChunk)   //Copy to memory, add 0x40 for offset + length
                     dataOffset := add(dataOffset, 0x20)         //Move to next 32 bytes of uri value
                     lenCoverage := add(lenCoverage, 0x20)       //Advance length coverage by 32 bytes
                 }
@@ -121,7 +147,7 @@ object "ERC1155" {
                 //I'm assuming that the id should be appended to the end of the uri string
                 //---do something---
 
-                return(0, add(0x40, lenConverage))              //(eg: offset(0x20) + length(0x20) + uri value(0x20))
+                return(0, add(0x40, lenCoverage))               //(eg: offset(0x20) + length(0x20) + uri value(0x20))
             }
 
             function _setUri() {
@@ -147,77 +173,39 @@ object "ERC1155" {
                 emitURI()
             }
 
-            //Nested mapping: (firstKey => (secondKey => value))
-            //Nested value storage location: keccak256(secondKey.concat(keccak256(firstKey.concat(mappingStorageSlot))))
             function _getBalanceOf(addr, tokenId) -> bal {
-                //Outer location: keccak256(address.concat(balanceOfSlot()))
-                mstore(0x00, addr)
-                mstore(0x20, balanceOfSlot())
-                let outerLoc := keccak256(0x00, 0x40)
-
-                //Inner location: keccak256(tokenId.concat(outerLoc))
-                mstore(0x00, tokenId)
-                mstore(0x20, outerLoc)
-                let innerLoc := keccak256(0x00, 0x40)
-
-                bal := sload(innerLoc)
+                //Get location of addr's balance of tokenId in storage
+                let offset := balanceOfStorageOffset(addr, tokenId)
+                bal := sload(offset)
             }
 
             function _safeAddBalanceOf(toAddr, tokenId, amount) {
                 //Get location of toAddr's balance of tokenId in storage
-                mstore(0x00, toAddr)
-                mstore(0x20, balanceOfSlot())
-                let outerLoc := keccak256(0x00, 0x40)
-                mstore(0x00, tokenId)
-                mstore(0x20, outerLoc)
-                let innerLoc := keccak256(0x00, 0x40)
-
+                let offset := balanceOfStorageOffset(toAddr, tokenId)
                 //Update balance in storage
-                let currBal := sload(innerLoc)
-                sstore(innerLoc, safeAdd(currBal, amount))
+                let currBal := sload(offset)
+                sstore(offset, safeAdd(currBal, amount))
             }
 
             function _safeSubBalanceOf(fromAddr, tokenId, amount) {
                 //Get location of fromAddr's balance of tokenId in storage
-                mstore(0x00, fromAddr)
-                mstore(0x20, balanceOfSlot())
-                let outerLoc := keccak256(0x00, 0x40)
-                mstore(0x00, tokenId)
-                mstore(0x20, outerLoc)
-                let innerLoc := keccak256(0x00, 0x40)
-
+                let offset := balanceOfStorageOffset(fromAddr, tokenId)
                 //Update balance in storage
-                let currBal := sload(innerLoc)
-                sstore(innerLoc, safeSub(currBal, amount))
+                let currBal := sload(offset)
+                sstore(offset, safeSub(currBal, amount))
             }
 
-            //Nested mapping: (firstKey => (secondKey => value))
-            //Nested value storage location: keccak256(secondKey.concat(keccak256(firstKey.concat(mappingStorageSlot))))
             function _getIsApprovedForAll(owner, operator) -> all {
-                //Outer location: keccak256(owner.concat(isApprovedForAllSlot()))
-                mstore(0x00, owner)
-                mstore(0x20, isApprovedForAllSlot())
-                let outerLoc := keccak256(0x00, 0x40)
-
-                //Inner location: keccak256(operator.concat(outerLoc))
-                mstore(0x00, operator)
-                mstore(0x20, outerLoc)
-                let innerLoc := keccak256(0x00, 0x40)
-
-                all := sload(innerLoc)
+                //Get location of owner's approval for operator in storage
+                let offset := isApprovedForAllStorageOffset(owner, operator)
+                all := sload(offset)
             }
 
             function _setApprovalForAll(owner, operator, approved) { 
                 //Get location of owner's approval for operator in storage
-                mstore(0x00, owner)
-                mstore(0x20, isApprovedForAllSlot())
-                let outerLoc := keccak256(0x00, 0x40)
-                mstore(0x00, operator)
-                mstore(0x20, outerLoc)
-                let innerLoc := keccak256(0x00, 0x40)
-
+                let offset := isApprovedForAllStorageOffset(owner, operator)
                 //Update approval in storage
-                sstore(innerLoc, approved)
+                sstore(offset, approved)
 
                 emitApprovalForAll(owner, operator, approved)
             }
