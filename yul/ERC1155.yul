@@ -1,3 +1,7 @@
+//Questions:
+//https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#bytes-and-string
+//In yul, do we need to adhere to this?
+
 object "ERC1155" {
     //Executable code of ERC1155 object (constructor)
     code {
@@ -31,7 +35,14 @@ object "ERC1155" {
             }
 
             //safeTransferFrom(address,address,uint256,uint256,bytes)
-            case 0xf242432a {}
+            case 0xf242432a {
+                let from := decodeAsAddress(0)
+                let to := decodeAsAddress(1)
+                let id := decodeAsUint(2)
+                let amount := decodeAsUint(3)
+                let dataOffset := decodeAsUint(4)
+                _safeTransferFrom(from, to, id, amount, dataOffset)
+            }
 
             //safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
             case 0x2eb2c2d6 {}
@@ -95,7 +106,7 @@ object "ERC1155" {
             /*----------------------------------------------------------------------------------*/
             
             function _supportsInterface() -> res {
-                //bytes4: 0xaabbccdd00000000000000000000000000000000000000000000000000000000
+                //bytes4: 0xaabbccdd
                 let IERC1155InterfaceId := 0xd9b67a2600000000000000000000000000000000000000000000000000000000
                 let IERC1155MetdataURIInterfaceId := 0xd9b67a2600000000000000000000000000000000000000000000000000000000
                 let IERC165InterfaceId := 0x01ffc9a700000000000000000000000000000000000000000000000000000000
@@ -111,7 +122,7 @@ object "ERC1155" {
             }
 
             function _balanceOfBatch(addrOffset, idsOffset) {
-                let addrStartPos := add(0x04, addrOffset)       //StartPos == length position (actual data follows after length)
+                let addrStartPos := add(0x04, addrOffset)       //StartPos == length position (actual data follows after)
                 let idsStartPos := add(0x04, idsOffset)
 
                 let addrLen := calldataload(addrStartPos)
@@ -137,12 +148,78 @@ object "ERC1155" {
                     idsValuePointer := add(idsValuePointer, 0x20)
                 }
 
-                arrayValuesWordCount := mul(addrLen, 0x20)     //each bal is a word (32 bytes)
+                arrayValuesWordCount := mul(addrLen, 0x20)      //each bal is a word (32 bytes)
 
                 //return: offset, length, array items
                 mstore(0x00, 0x20)
                 mstore(0x20, addrLen)
                 return(0x00, add(0x40, arrayValuesWordCount))
+            }
+
+            function _safeTransferFrom(from, to, id, amount, dataOffset) {
+                require(or(eq(caller(), from), _getIsApprovedForAll(from, caller())))
+                revertIfZeroAddress(to)
+
+                //Update balances
+                _safeSubBalanceOf(from, id, amount)
+                _safeAddBalanceOf(to, id, amount)
+
+                emitTransferSingle(caller(), from, to, id, amount)
+
+                //onERC1155REceived callback
+                if _hasCode(to) {
+                    _checkOnERC1155Received(caller(), from, to, id, amount, dataOffset)
+                }
+            }
+
+            //onERC1155Received(address,address,uint256,uint256,bytes) -> bytes4
+            //onERC1155Received(operator,from,id,amount,data)
+            function _checkOnERC1155Received(operator, from, to, id, amount, dataOffset) {
+                let onERC1155ReceivedSelector := 0xf23a6e6100000000000000000000000000000000000000000000000000000000
+
+                //Prep calldata
+                mstore(0, onERC1155ReceivedSelector)
+                mstore(0x04, operator)
+                mstore(0x24, from)
+                mstore(0x44, id)
+                mstore(0x64, amount)
+                mstore(0x84, 0xa0)                                              //offset for data in calldata @ 0x84: 0xa4
+
+                let dataValuePointer := add(dataOffset, 0x20)                   //Pointer to the actual data
+                let dataSizeInWords := sub(calldatasize(), dataOffset)          //Length word + data value word(s)
+
+                //calldatacopy(memOffsetCopyTo, calldataOffsetCopyFrom, numBytesToCopy)
+                calldatacopy(0xa4, dataValuePointer, dataSizeInWords)           //Copy data to memory @ 0xa4
+
+                //call(gas, addr, wei, argsOffset, argsSize, retOffset, retSize))
+                //For argsSize, add 0x20 to calldatasize since no. of args in `_safeTransferFrom` is 5.
+                //Checks if the external call fails, if so, check if any return data
+                if iszero(call(gas(), to, 0, 0x00, add(0x20, calldatasize()), 0x00, 0x20)) {
+                    if returndatasize() {
+                        //Bubble up revert reason
+                        //returndatacopy(destOffset, retDataOffset, copySize)
+                        returndatacopy(0x00, 0x00, returndatasize())
+                        revert(0x00, returndatasize())
+                    }
+                    revert(0x00, 0x00)
+                }
+
+                //Check if the return value is equal to the selector
+                let retData := mload(0x00)
+                if iszero(eq(retData, onERC1155ReceivedSelector)) {
+                    mstore(0x00, 0x20)
+                    mstore(0x20, 0x10)
+                    mstore(0x40, shl(128, 0x554e534146455f524543495049454e54))  //"UNSAFE_RECIPIENT"
+                    revert(0x00, 0x60)
+                }
+            }
+
+            function _safeBatchTransferFrom(from, to, idsOffset, amountsOffset, dataOffset) {
+                
+            }
+
+            function _checkOnERC1155BatchReceived(operator, from, to, idsOffset, amountsOffset, dataOffset) {
+
             }
 
             /*------------------------------------------------------------------------------*/
@@ -210,7 +287,6 @@ object "ERC1155" {
                 return(0, add(0x40, lenCoverage))               //(eg: offset(0x20) + length(0x20) + uri value(0x20))
             }
 
-            //*Need clarification: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#bytes-and-string
             function _setUri() {
                 //calldata: selector, offset, length, value
                 let uriOffset := decodeAsUint(0)
@@ -400,6 +476,11 @@ object "ERC1155" {
             /*-----------------------------------------------------------------------*/
             /*----------------------------    Utility    ----------------------------*/
             /*-----------------------------------------------------------------------*/
+
+            //For checking if an address has code
+            function _hasCode(addr) -> res {
+                res := gt(extcodesize(addr), 0)
+            }
 
             //negation: if condition == 0, reverts
             function require(condition) {
