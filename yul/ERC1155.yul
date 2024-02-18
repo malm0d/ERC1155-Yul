@@ -53,13 +53,14 @@ object "ERC1155" {
             /*------------------------------------------------------------------------------*/
 
             //uri(uint256) -> string
-            case 0x0e89341c {}
-
-            //balanceOfBatch(address[],uint256[]) -> uint256[]
-            case 0x4e1273f4 {}
+            case 0x0e89341c {
+                _getUri(decodeAsUint(0))                        //Returns from function
+            }
 
             //supportsInterface(bytes4) -> bool
-            case 0x01ffc9a7 {}
+            case 0x01ffc9a7 {
+                returnUint(_supportsInterface())
+            }
 
             //balanceOf(address,uint256) -> uint256
             case 0x00fdd58e {
@@ -67,6 +68,13 @@ object "ERC1155" {
                 let tokenId := decodeAsUint(1)
                 let bal := _getBalanceOf(addr, tokenId)
                 returnUint(bal)
+            }
+
+            //balanceOfBatch(address[],uint256[]) -> uint256[]
+            case 0x4e1273f4 {
+                let addrOffset := decodeAsUint(0)
+                let idsOffset := decodeAsUint(1)
+                _balanceOfBatch(addrOffset, idsOffset)          //Returns from function
             }
 
             //isApprovedForAll(address,address) -> bool
@@ -85,6 +93,57 @@ object "ERC1155" {
             /*----------------------------------------------------------------------------------*/
             /*----------------------------    Internal functions    ----------------------------*/
             /*----------------------------------------------------------------------------------*/
+            
+            function _supportsInterface() -> res {
+                //bytes4: 0xaabbccdd00000000000000000000000000000000000000000000000000000000
+                let IERC1155InterfaceId := 0xd9b67a2600000000000000000000000000000000000000000000000000000000
+                let IERC1155MetdataURIInterfaceId := 0xd9b67a2600000000000000000000000000000000000000000000000000000000
+                let IERC165InterfaceId := 0x01ffc9a700000000000000000000000000000000000000000000000000000000
+
+                let interfaceId := calldataload(0x04)
+                res := or(
+                    eq(interfaceId, IERC1155MetdataURIInterfaceId), 
+                    or(
+                        eq(interfaceId, IERC165InterfaceId), 
+                        eq(interfaceId, IERC1155InterfaceId)
+                    )
+                )
+            }
+
+            function _balanceOfBatch(addrOffset, idsOffset) {
+                let addrStartPos := add(0x04, addrOffset)       //StartPos == length position (actual data follows after length)
+                let idsStartPos := add(0x04, idsOffset)
+
+                let addrLen := calldataload(addrStartPos)
+                let idsLen := calldataload(idsStartPos)
+                require(eq(addrLen, idsLen))
+
+                let addrValuePointer := add(addrStartPos, 0x20) //Pointer to the actual data
+                let idsValuePointer := add(idsStartPos, 0x20)   //Pointer to the actual data
+
+                //return array: [addr1_bal, addr2_bal, ...]
+                for { let i := 0 } lt(i, addrLen) { i := add(i, 0x01) } {
+                    let addr := calldataload(addrValuePointer)
+                    let id := calldataload(idsValuePointer)
+                    let bal := _getBalanceOf(addr, id)
+
+                    //store each bal starting from 0x40 (reserve 0x00 for offset, 0x20 for length)
+                    //eg, first bal @ 0x40, second bal @ 0x60, ...
+                    let memOffsetCopyTo := add(0x40, mul(i, 0x20))
+                    mstore(memOffsetCopyTo, bal)
+
+                    //advance pointers
+                    addrValuePointer := add(addrValuePointer, 0x20)
+                    idsValuePointer := add(idsValuePointer, 0x20)
+                }
+
+                arrayValuesWordCount := mul(addrLen, 0x20)     //each bal is a word (32 bytes)
+
+                //return: offset, length, array items
+                mstore(0x00, 0x20)
+                mstore(0x20, addrLen)
+                return(0x00, add(0x40, arrayValuesWordCount))
+            }
 
             /*------------------------------------------------------------------------------*/
             /*----------------------------    Storage layout    ----------------------------*/
@@ -144,7 +203,8 @@ object "ERC1155" {
                     lenCoverage := add(lenCoverage, 0x20)       //Advance length coverage by 32 bytes
                 }
 
-                //I'm assuming that the id should be appended to the end of the uri string
+                //I'm assuming that the id should be appended somewhat. Based on the spec, it should look like this: 
+                //https://token-cdn-domain/000000000000000000000000000000000000000000000000000000000004cce0.json
                 //---do something---
 
                 return(0, add(0x40, lenCoverage))               //(eg: offset(0x20) + length(0x20) + uri value(0x20))
@@ -280,15 +340,16 @@ object "ERC1155" {
 
                 mstore(0x00, 0x40)                                              //offset for ids
                 mstore(0x20, add(0x60, mul(idsLength, 0x20)))                   //offset for values
-                let numOfWordsForIds := mul(add(idsLength, 0x01), 0x20)         //Words: id length word + (1 word per id)
+                let numOfWordsForIds := add(0x20, mul(idsLength, 0x20))         //Words: id length word + (1 word per id)
                 
                 //calldatacopy(memOffsetCopyTo, calldataOffsetCopyFrom, numBytesToCopy)
-                calldatacopy(0x40, idsLoc, numOfWordsForIds)                    //Copy words for ids to memory
+                calldatacopy(0x40, idsLoc, numOfWordsForIds)                    //Copy words for ids to memory @ 0x40
 
-                let numOfWordsForValues := mul(add(valuesLength, 0x01), 0x20)   //Words: values length word + (1 word per value
-                let valuesMemOffsetToCopyTo := add(0x40, numOfWordsForIds)
+                let valuesMemOffsetToCopyTo := add(0x40, numOfWordsForIds)      //Advance from 0x40 by numOfWordsForIds
 
-                calldatacopy(                                                   //Copy words for values to memory    
+                let numOfWordsForValues := add(0x20, mul(valuesLength, 0x20))   //Words: values length word + (1 word per value)
+
+                calldatacopy(                                                   //Copy words for values to memory @ valuesMemOffsetToCopyTo    
                     valuesMemOffsetToCopyTo, 
                     valuesLoc, 
                     numOfWordsForValues
