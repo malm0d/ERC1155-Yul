@@ -45,7 +45,14 @@ object "ERC1155" {
             }
 
             //safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
-            case 0x2eb2c2d6 {}
+            case 0x2eb2c2d6 {
+                let from := decodeAsAddress(0)
+                let to := decodeAsAddress(1)
+                let idsOffset := decodeAsUint(2)
+                let amountsOffset := decodeAsUint(3)
+                let dataOffset := decodeAsUint(4)
+                _safeBatchTransferFrom(from, to, idsOffset, amountsOffset, dataOffset)
+            }
 
             //mint(address,uint256muint256,bytes)
             case 0x731133e9 {}
@@ -127,7 +134,14 @@ object "ERC1155" {
 
                 let addrLen := calldataload(addrStartPos)
                 let idsLen := calldataload(idsStartPos)
-                require(eq(addrLen, idsLen))
+
+                // require(eq(addrLen, idsLen))
+                if iszero(eq(addrLen, idsLen)) {
+                    mstore(0x00, 0x20)
+                    mstore(0x20, 0x0f)
+                    mstore(0x40, shl(136, 0x4c454e4754485f4d49534d41544348))  //"LENGTH_MISMATCH"
+                    revert(0x00, 0x60)
+                }
 
                 let addrValuePointer := add(addrStartPos, 0x20) //Pointer to the actual data
                 let idsValuePointer := add(idsStartPos, 0x20)   //Pointer to the actual data
@@ -157,8 +171,9 @@ object "ERC1155" {
             }
 
             function _safeTransferFrom(from, to, id, amount, dataOffset) {
-                require(or(eq(caller(), from), _getIsApprovedForAll(from, caller())))
                 revertIfZeroAddress(to)
+                require(or(eq(caller(), from), _getIsApprovedForAll(from, caller())))
+                //need to throw "NOT_AUTHORIZED"
 
                 //Update balances
                 _safeSubBalanceOf(from, id, amount)
@@ -215,7 +230,32 @@ object "ERC1155" {
             }
 
             function _safeBatchTransferFrom(from, to, idsOffset, amountsOffset, dataOffset) {
-                
+                revertIfZeroAddress(to)
+
+                let idsStartPos := add(0x04, idsOffset)         //StartPos == length position (actual data follows after)
+                let amountsStartPos := add(0x04, amountsOffset)
+
+                let idsLen := calldataload(idsStartPos)
+                let amountsLen := calldataload(amountsStartPos)
+                if iszero(eq(idsLen, amountsLen)) {
+                    mstore(0x00, 0x20)
+                    mstore(0x20, 0x0f)
+                    mstore(0x40, shl(136, 0x4c454e4754485f4d49534d41544348))    //"LENGTH_MISMATCH"
+                    revert(0x00, 0x60)
+                }
+
+                require(or(eq(caller(), from), _getIsApprovedForAll(from, caller())))
+                //need to throw "NOT_AUTHORIZED"
+
+                let idsValuePointer := add(idsStartPos, 0x20)                   //Pointer to the actual data
+                let amountsValuePointer := add(amountsStartPos, 0x20)           //Pointer to the actual data
+
+                //WIP do loop
+
+                //onERC1155BatchReceived callback
+                if _hasCode(to) {
+                    _checkOnERC1155BatchReceived(caller(), from, to, idsOffset, amountsOffset, dataOffset)
+                }
             }
 
             function _checkOnERC1155BatchReceived(operator, from, to, idsOffset, amountsOffset, dataOffset) {
