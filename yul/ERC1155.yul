@@ -198,7 +198,7 @@ object "ERC1155" {
                 mstore(0x24, from)
                 mstore(0x44, id)
                 mstore(0x64, amount)
-                mstore(0x84, 0xa0)                                              //offset for data in calldata @ 0x84: 0xa4
+                mstore(0x84, 0xa0)                                              //offset for data in calldata @ 0x84: 0xa0
 
                 let dataValuePointer := add(dataOffset, 0x20)                   //Pointer to the actual data
                 let dataSizeInWords := sub(calldatasize(), dataOffset)          //Length word + data value word(s)
@@ -208,6 +208,7 @@ object "ERC1155" {
 
                 //call(gas, addr, wei, argsOffset, argsSize, retOffset, retSize))
                 //For argsSize, add 0x20 to calldatasize since no. of args in `_safeTransferFrom` is 5.
+                //(This calldata is from when `_safeTransferFrom` is called).
                 //Checks if the external call fails, if so, check if any return data
                 if iszero(call(gas(), to, 0, 0x00, add(0x20, calldatasize()), 0x00, 0x20)) {
                     if returndatasize() {
@@ -250,15 +251,62 @@ object "ERC1155" {
                 let idsValuePointer := add(idsStartPos, 0x20)                   //Pointer to the actual data
                 let amountsValuePointer := add(amountsStartPos, 0x20)           //Pointer to the actual data
 
-                //WIP do loop
+                for { let i := 0 } lt((i, idsLen)) { i := add(i, 0x01) } {
+                    let id := calldataload(idsValuePointer)
+                    let amount := calldataload(amountsValuePointer)
+
+                    //update balances
+                    _safeSubBalanceOf(from, id, amount)
+                    _safeAddBalanceOf(to, id, amount)
+
+                    //advance pointers
+                    idsValuePointer := add(idsValuePointer, 0x20)
+                    amountsValuePointer := add(amountsValuePointer, 0x20)
+                }
+
+                emitTransferBatch(caller(), from, to, idsLen, idsStartPos, amountsLen, amountsStartPos)
 
                 //onERC1155BatchReceived callback
                 if _hasCode(to) {
-                    _checkOnERC1155BatchReceived(caller(), from, to, idsOffset, amountsOffset, dataOffset)
+                    _checkOnERC1155BatchReceived(caller(), from, to, idsStartPos, idsLen, amountsLen)
                 }
             }
 
-            function _checkOnERC1155BatchReceived(operator, from, to, idsOffset, amountsOffset, dataOffset) {
+            //onERC1155BatchReceived(address,address,uint256[],uint256[],bytes) -> bytes4
+            //onERC1155BatchReceived(operator,from,ids,amounts,data)
+            //
+            //Technically, we can copy directly from the calldata from idsStartPos (0xa4) onwards,
+            //since calldata:
+            //  0x04: 0x24 = from
+            //  0x24: 0x44 = to
+            //  0x44: 0x64 = ids offset
+            //  0x64: 0x84 = amounts offset
+            //  0x84: 0xa4 = data offset
+            //  0xa4: ~ = ids length, ids values, amounts length, amounts values, data length, data values
+            function _checkOnERC1155BatchReceived(operator, from, to, idsStartPos, idsLen, amountsLen) {
+                let onERC1155BatchReceivedSelector := 0xbc197c8100000000000000000000000000000000000000000000000000000000
+
+                //Prep calldata. For dynamic data, head parts come first (abi spec)
+                mstore(0, onERC1155BatchReceivedSelector)
+                mstore(0x04, operator)
+                mstore(0x24, from)
+                mstore(0x44, 0xa0)                          //offset for ids in calldata @ 0x44: 0xa0                         
+                mstore(0x64, add(0xc0, mul(idsLen, 0x20)))  //offset for amounts @ 0x64: 0xc0 + (idsLen * 0x20)
+                mstore(0x84, add(0xe0, mul(add(idsLen, amountsLen), 0x20)))  //offset for data in calldata @ 0x84: 0xe0 + ((idsLen + amountsLen) * 0x20)                                     
+                
+                //copy rest of calldata to memory
+                //calldatacopy(memOffsetCopyTo, calldataOffsetCopyFrom, numBytesToCopy)
+                calldatacopu(0xa4, idsStartPos, sub(calldatasize(), idsStartPos))
+
+                //call(gas, addr, wei, argsOffset, argsSize, retOffset, retSize))
+                //For argsSize, add 0x20 to calldatasize since no. of args in `_safeBatchTransferFrom` is 5.
+                //(This calldata is from when `_safeBatchTransferFrom` is called).
+                //Checks if the external call fails, if so, check if any return data
+                if iszero(call(gas(), to, 0, 0x00, add(0x20, calldatasize()), 0x00, 0x20)) {
+                    if returndatasize() {
+                        
+                    }
+                }
 
             }
 
