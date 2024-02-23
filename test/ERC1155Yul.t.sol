@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.21;
+pragma solidity 0.8.22;
 
 import {DSTestPlus} from "lib/solmate/src/test/utils/DSTestPlus.sol";
 import {DSInvariantTest} from "lib/solmate/src/test/utils/DSInvariantTest.sol";
@@ -255,7 +255,7 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
 
         assertEq(to.batchOperator(), address(this));
         assertEq(to.batchFrom(), address(0));
-        assertUintArrayEq(to.batchId(), ids);
+        assertUintArrayEq(to.batchIds(), ids);
         assertUintArrayEq(to.batchAmounts(), amounts);
         assertBytesEq(to.batchData(), "testing 123");
 
