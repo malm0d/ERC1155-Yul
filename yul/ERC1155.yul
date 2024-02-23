@@ -54,8 +54,13 @@ object "ERC1155" {
                 _safeBatchTransferFrom(from, to, idsOffset, amountsOffset, dataOffset)
             }
 
-            //mint(address,uint256muint256,bytes)
-            case 0x731133e9 {}
+            //mint(address,uint256,uint256,bytes)
+            case 0x731133e9 {
+                let to := decodeAsAddress(0)
+                let id := decodeAsUint(1)
+                let amount := decodeAsUint(2)
+                let dataOffset := decodeAsUint(3)
+            }
 
             //batchMint(address,uint256[],uint256[],bytes)
             case 0xb48ab8b6 {}
@@ -217,7 +222,7 @@ object "ERC1155" {
                         returndatacopy(0x00, 0x00, returndatasize())
                         revert(0x00, returndatasize())
                     }
-                    revert(0x00, 0x00)
+                    revert(0x00, 0x00)  //is this needed?
                 }
 
                 //Check if the return value is equal to the selector
@@ -304,11 +309,31 @@ object "ERC1155" {
                 //Checks if the external call fails, if so, check if any return data
                 if iszero(call(gas(), to, 0, 0x00, add(0x20, calldatasize()), 0x00, 0x20)) {
                     if returndatasize() {
-                        
+                        //Bubble up revert reason
+                        //returndatacopy(destOffset, retDataOffset, copySize)
+                        revert(0x00, returndatasize())
                     }
+                    revert(0x00, 0x00)
                 }
 
+                //Check if the return value is equal to the selector
+                let retData := mload(0x00)
+                if iszero(eq(retData, onERC1155BatchReceivedSelector) {
+                    mstore(0x00, 0x20)
+                    mstore(0x20, 0x10)
+                    mstore(0x40, shl(128, 0x554e534146455f524543495049454e54))  //"UNSAFE_RECIPIENT"
+                    revert(0x00, 0x60)
+                })
+
             }
+
+            function _mint(to, id, amount, dataOffset) { }
+
+            function _batchMint(to, idsOffset, amountsOffset, dataOffset) { }
+
+            function _burn(from, id, amount) { }
+
+            function _batchBurn(from, idsOffset, dataOffset) { }
 
             /*------------------------------------------------------------------------------*/
             /*----------------------------    Storage layout    ----------------------------*/
